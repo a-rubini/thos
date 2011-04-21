@@ -1,0 +1,1369 @@
+\input texinfo    @c -*-texinfo-*-
+%
+% thos.in - main file for the documentation
+%
+%----------------------------------------------------------------------------
+%
+%                         NOTE FOR THE UNAWARE USER
+%                         =========================
+%
+%  This file is a texinfo source. It isn't the binary file of some strange
+%  editor of mine. If you want ASCII, you should "make" and read the txt file
+%
+%----------------------------------------------------------------------------
+
+%
+% This is not a conventional info file...
+% I use three extra features:
+%   - The '%' as a comment marker, if at beginning of line ("\%" -> "%")
+%   - leading blanks are allowed (this is something I can't live without)
+%   - braces are automatically escaped when they appear in example blocks
+%
+
+@comment %**start of header
+@documentlanguage en
+@documentencoding ISO-8859-1
+@setfilename thos.info
+@settitle thos
+@iftex
+@afourpaper
+@end iftex
+@paragraphindent none
+@comment %**end of header
+
+@setchapternewpage off
+
+@set update-month April 2011
+@set release v2011-04
+
+@finalout
+
+@titlepage
+@title THOS
+@subtitle @value{update-month}
+@subtitle Two Hour Operating System (Version @value{release})
+
+@author Alessandro Rubini (@code{rubini@@gnudd.com})
+@end titlepage
+@headings single
+
+@c ##########################################################################
+@node Top, Laying out the Makefile, (dir), (dir)
+@top Introduction
+
+This document accompanies source code for a simple operating system
+for micro-controllers.  The OS uses cooperative multitasking and
+handles a few different tasks (but you can easily add more). The
+target CPU is the LPC1343 (Cortex-M3). The board I  used os
+is the one sold by Olimex for 15 EUR. but I had to add a level converter
+for the serial port.  Actually, any board will work, but you, as a reader,
+are not actually expected to run the code -- even if it really runs on my
+hardware.
+
+This project was born as a simplified spin-off of another OS that I am
+writing; Thos has been presented a few times in the form of a lesson.
+Initially I wrote it for ARM7 (using the @i{Christmas Tree} device),
+then I've redone it on a Cortex-M3, since the @i{tree} is not for sale
+any more and the cheap ARM7 boards are now more expensive than the
+cheap Cortex ones, so the current hardware I'm using is the board
+depicted below.
+
+@image{lpc1343, 8cm}
+
+This document describes the whole writing of the OS, starting from an
+empty directory. As a prerequisite, you are expected to know C
+language and have some experience with computer programming in
+general.  Master or PhD students are usually able to understand and enjoy
+the Thos lesson.
+
+The released package is a @i{git} tree, so you can get back to older
+releases in the published history and follow the code described in the
+text as it is being written -- however, the document is committed
+after the code in the published history, so you need to keep a copy of
+the documentation before checking out individual chapters.
+
+Please note that sometimes the choices being made are suboptimal, and
+I'm well aware of it. This material is really being shown in two
+hours, so many details have been ignored because of time constraints.
+I'm somehow shy of the suboptimal choices now that I put it all in
+writing, but I still want this material to be explained while being
+typed live in a single lesson.
+
+@menu
+* Laying out the Makefile::     
+* The Linker Script::           
+* The Assembly Code::           
+* Loading the Binary::          
+* Serial Output::               
+* The Jiffies Variable::        
+* The Task Model::              
+* GPIO Output::                 
+* The Future of Thos::          
+@end menu
+
+@c ##########################################################################
+@node Laying out the Makefile
+@chapter Laying out the Makefile
+
+As a first step in setting up a new package, we'll set up a @i{Makefile},
+taking care of compilation of our sources, which are both C and assembly files.
+We'll use a simple @i{Makefile} (as simple as possible, as usual), so
+there is no support for dependencies or such stuff.
+
+@menu
+* Cross-Compilation::           
+* CFLAGS::                      
+* A First Build::               
+@end menu
+
+@c ==========================================================================
+@node Cross-Compilation
+@section Cross-Compilation
+
+The code will be cross-compiled: the target is ARM while the build
+system is a PC. So let's start by defining the tools used for
+cross-compilation: the established practice is defining @code{CC} and
+other variables based on an environment variable called
+@code{CROSS_COMPILE}.  Thus, let's copy the usual stanza from the
+@i{Makefile} of any kernel version:
+
+@example
+   AS              = $(CROSS_COMPILE)as
+   LD              = $(CROSS_COMPILE)ld
+   CC              = $(CROSS_COMPILE)gcc
+   CPP             = $(CC) -E
+   AR              = $(CROSS_COMPILE)ar
+   NM              = $(CROSS_COMPILE)nm
+   STRIP           = $(CROSS_COMPILE)strip
+   OBJCOPY         = $(CROSS_COMPILE)objcopy
+   OBJDUMP         = $(CROSS_COMPILE)objdump
+@end example
+
+The cross-compiler we need to use is any @i{gcc} starting from version 4.3. If
+your compiler is older than that, it won't support the @i{armv7},
+which is our target CPU.   The most common choice nowadays is using the
+@i{lite} version of @code{codesourcery.com}.  For example, you can
+download this file:
+
+@c http://www.codesourcery.com/sgpp/lite/arm/portal/package6493/public/
+@c      arm-none-eabi/arm-2010q1-188-arm-none-eabi-i686-pc-linux-gnu.tar.bz2
+@smallexample
+http://www.codesourcery.com/sgpp/lite/arm/portal/package8734/public/
+      arm-none-eabi/arm-2011.03-42-arm-none-eabi-i686-pc-linux-gnu.tar.bz2
+@end smallexample
+
+(you may look for a more recent version, but all of them are a dozen clicks
+away from the home page, so the direct link here may be useful).
+
+The compiler can be uncompressed  to any directory of your choice. For
+example, if you unpack in @code{/opt}, you'll need to run this command
+
+@example
+   export CROSS_COMPILE=/opt/arm-2011.03/bin/arm-none-eabi-
+@end example
+
+in order for the @i{Makefile} to build all names for your commands.
+
+@c ==========================================================================
+@node CFLAGS
+@section CFLAGS
+
+The Cortex-M3 is only one of the possible flavors of the ARM processor,
+so you'll need to always pass @code{-march=armv7-m -mthumb} to both
+the compiler and the assembler.  Thus, our @i{Makefile} will need
+the following two lines as well. The extra @code{-g} forces
+debug information to be generated, and @code{-Wall} forces all warnings
+to be reported; both are things you really can't live without:
+
+@example
+   CFLAGS  = -march=armv7-m -mthumb -g -Wall
+   ASFLAGS = -march=armv7-m -mthumb -g -Wall
+@end example
+
+With these variables in place, @i{make} is able to automatically create
+@i{file.o} if either @i{file.c} or @i{file.S} exist.   We only need to
+declare our list of object files and a rule to link them; let's use
+the handy @i{make} shortcuts that name the target and the dependents,
+to avoid repetition of file names:
+
+@example
+   thos: boot.o io.o main.o
+           $(LD) $(LDFLAGS) $^ -o $@
+@end example
+
+@c ==========================================================================
+@node A First Build
+@section A First Build
+
+We'll now ``@code{touch boot.S io.c main.c}'' to at least be able to
+start a compilation. The choice of the file names reflects the need to
+have at least some operation running, with the necessary boot steps
+and minimal output operations in place.
+
+With the @i{Makefile} and the empty files in place, we can issue
+@i{make}, which finally builds a binary with no actual
+contents, as all input object files are empty. It also
+spits a warning, explained in the next chapter:
+
+@smallexample
+   ld: warning: cannot find entry symbol _start; defaulting to 00008000
+@end smallexample
+
+The current code situation is committed in the repository, like I
+always do for every chapter and section of this document. The
+commit message is a one liner, naming the chapter (or section)
+where the code is introduced.
+
+@c ##########################################################################
+@node The Linker Script
+@chapter The Linker Script
+
+To perform the final link step, we actually need a @i{linker script}.
+In other words, we must tell the linker how to lay out the memory
+map for the program.
+
+@menu
+* Spelling the Object Format::  
+* Placing Sections in Memory::  
+* Using the Script::            
+@end menu
+
+@c ==========================================================================
+@node Spelling the Object Format
+@section Spelling the Object Format
+
+When compiling your @code{hello.c} or equivalent program, you'll end
+up using the default linker script (usually in
+@i{/usr/lib/ldscripts}), which is designed to take care of programs
+that are hosted within an operating system.  When writing Thos we need to
+provide our own linker script, because our program must reside
+directly in the memory of our micro-controller and can't count on an
+host operating system.
+
+The first three lines of our linker script are standard stuff, that
+I refuse to learn by memory and I simply copy over from another linker
+script; the only customized line here is the entry point, which 
+we want to be @code{_thos_start}, a @i{symbol} that we'll define
+in our small assembly source file.
+
+@example
+   OUTPUT_FORMAT("elf32-littlearm")
+   OUTPUT_ARCH(arm)
+   ENTRY(_thos_start)
+@end example
+
+@c ==========================================================================
+@node Placing Sections in Memory
+@section Placing Sections in Memory
+
+After the header part, the script must list the ELF output sections,
+and the address in memory where they are placed.  To this aim, we need
+to know the memory map for the target processor.
+
+In the specific case (LPC1343), the processor has internal RAM and
+internal Flash; a user binary can be programmed to Flash memory using
+the USB port, or can be programmed to either RAM or Flash using a
+serial port.  Since programming to RAM is easier (both the associated
+@i{linker script} and the startup code are easier), my choice here is
+programming to RAM, even if the serial port is not directly wired out
+in the evaluation board as sold.
+
+This means you'll have to connect a serial port in some way to test the
+code shown here: the UART is really the easiest way to print some
+diagnostic message.  This is unfortunate, but doing it differently
+would require a huge lot of time (remember, this is meant to happen in
+a lesson of two hours in total).  Actually, the board where I initially
+wrote THOS had a usb-serial interface, so there it was not an issue.
+
+If you get a copy of the LPC1343 manual, you'll find that RAM starts
+from address 0x1000.0000, and the first bytes of the RAM itself are
+used by the internal ROM during the loading procedure, so I chose
+to load the program 1kB within RAM -- later, I'm going to use that
+spare kB for the stack.
+
+The resulting linker script is as shown below. Note that @i{dot}
+(@code{"."})  is the point where output data is being written; thus,
+the initial assignment to @i{dot} forces the output to be placed at
+address 0x1000.0400.   Starting at that address, the usual ELF
+sections are placed, in the usual order. The sections we need
+are the old known @code{.code}, @code{.data} and @code{.bss}, with
+the more recent addition of @code{.rodata}, where the compiler
+places constant string and similar material.
+
+@example
+   SECTIONS
+   {
+           . = 0x10000400;
+           .text : {
+                   *(.boot)
+                   *(.text)
+           }
+           .rodata : { *(.rodata) }
+           .data : { *(.data) }
+
+           .bss : {
+                   . = ALIGN(16);
+                   __bss_start = .;
+                   *(.bss);
+                   . = ALIGN(16);
+                   __bss_end = .;
+           }
+   }
+@end example
+
+The only unusual detail in the script just shown, is the
+@code{*(.boot)} line.  It says that the @code{.text} output section
+is built to include the contents of any @code{.boot} section appearing in
+input files followed by the contents of any @code{.text} input sections.
+This is how I force the contents of @i{boot.S} to be at the
+head of the output file.
+
+The leading @code{*} in the definition of input sections means
+``all input files'', but you could also
+write @code{start.o(.text)}.  This is a matter of personal preference:
+I prefer to define initial code by putting it in a specially-named
+section instead of hardwiring the input file name in the linker script.
+
+
+@c ==========================================================================
+@node Using the Script
+@section Using the Script
+
+To put our linker script in action we need to set @code{LDFLAGS} in 
+the @i{Makefile}:
+
+@example
+   LDFLAGS = -T thos.lds
+@end example
+
+Now compilation of the empty input ends with the following message,
+which confirms the linker script is being used:
+
+@smallexample
+   ld: warning: cannot find entry symbol _thos_start; defaulting to 10000400
+@end smallexample
+
+
+@c ##########################################################################
+@node The Assembly Code
+@chapter The Assembly Code
+
+When the system begins running at power-on, there is no pre-built
+context at all.  The only thing you can count on is the initial execution
+address, and you can place your assembly instructions there.
+
+@menu
+* Naming an ELF Section::       
+* Actual ASM code::             
+* Compiling boot.S::            
+@end menu
+
+@c ==========================================================================
+@node Naming an ELF Section
+@section Naming an ELF Section
+
+Before you are able to run code in a higher level language at system
+boot, you need to build your so-called @i{run-time environment}.
+Since C is a very low-level language (they say it's powerful like
+assembly and simple like assembly) you need two very simple things: a
+stack pointer and a zeroed BSS. Remember that the @code{.bss} section
+is allocated but not stored in the ELF binary: it must be zeroed at
+run-time.
+
+Our first source code will be the minimal amount of assembly needed
+to perform those initial steps.  We place the stack pointer before
+code (so the stack can grow in the kilobyte of space we left free
+at the beginning of RAM), and we zero the @i{.bss} ELF section by
+means of the symbols we defined in the linker script: @i{__bss_start} and
+@i{__bss_end}.
+
+The code in @i{boot.S} is going to live in the section called @i{.boot},
+so the linker script will place it before the default code section.
+this ensures that the first instructions in the binary file come
+from @i{boot.S}.
+
+The first line of the file is thus as follows:
+
+@example
+   .section .boot, "ax"
+@end example
+
+While ELF section names are arbitrary, it's an established convention
+to use names with a leading dot. Assembly directives have always been
+starting with dot, like @i{.section} above, so a casual reader can see
+at a glance whether a word unknown to her is an instruction or a
+directive.  In the old ages, section names were fixed, and the
+directives in assembly files were just @i{.text}, @i{.data} and
+@i{.bss}; this convention of using dot-prefixed section names remained
+when arbitrary names were introduced.
+
+The @code{"ax"} above means @i{allocate} and @i{executable}. The
+former flag is now implicit, but usually retained for compatibility
+with older tools; the latter flag is needed so ELF-reading tools know
+what the content is.  In this case, we'll need to disassemble with
+@code{objdump -d}, and the tool refuses to disassemble data sections.
+In other execution environments (e.g., when the code is hosted in
+another OS) the flag may be used to set permissions on memory pages,
+so we may say that marking executable sections with @code{"x"} is
+mandatory, even if sometimes things may work nonetheless.
+
+@c ==========================================================================
+@node Actual ASM code
+@section Actual ASM code
+
+Within the @i{.boot} section we'll now place our code, labelling the
+first instruction as @code{_thos_start}, which is the @i{entry point}
+declared in the linker script.  Even though the entry point is not
+actually needed in this project, by defining it we avoid the ugly warning
+message; again, in other execution environments defining the entry
+point is mandatory, especially when it doesn't mark the first byte of the
+binary file.
+
+The leading underscore in the name of the entry point is
+another convention: symbols that are used in assembly files or other
+low-level implementations should not be referenced by higher-level
+code: the underscore is a signal that the symbol is somehow special
+and it's only relevant to people who hack the internals.
+
+The code then will set the stack pointer and zero bss. The stack
+address is calculated by subtracting from the program counter, to save
+an explicit address in the code, the bss-zeroing loop is then
+trivial. You are not expected to be able to write assembly code for
+your target CPU, but you are always expected to be able to read it;
+fortunately all assemblers are similar, so this is rarely a problem.
+
+@example
+   .global _thos_start
+   .extern __bss_start
+   .extern __bss_end
+   .extern thos_setup
+   .extern thos_main
+
+   _thos_start:
+   /* set the stack pointer */
+           mov r0, pc
+           sub r0, #12
+           mov sp, r0
+
+   /* clear BSS */
+           mov r0, #0
+           ldr r1, =__bss_start
+           ldr r2, =__bss_end
+   0:      
+           cmp r1, r2
+           bge 1f
+           str r0, [r1]
+           add r1, #4
+           b 0b
+
+   1:      bl thos_setup
+           bl thos_main
+           b 1b
+@end example
+
+There are a few details worth explaining here, which are independent
+of the target architecture and assembly language:
+
+@table @i
+
+@item .global
+
+	Any symbols defined in the assembly file are local by default.
+        Here, we ant @i{_thos_start} to be externally visible, because
+        it is the entry point looked for by the linker script.
+
+@item .extern
+
+	Any undefined symbol is considered @i{extern} by default,
+        so all these @i{.extern} directives are actually optional.
+        However, stating that we know these symbols are known to be
+        missing from this very file makes it more readable.
+
+@item local labels
+
+	In Unix assemblers, and numeric-only label is considered local,
+        and is referenced like shown above: @code{0b} means ``0 backward''
+        and @code{1f} means ``1 forward'' -- the nearest local label
+        forward or backward from the instruction naming it.
+        This means that you can use the same label name several times
+        in the same source file, which is very useful when you write
+        assembly code in C macros.
+
+@end table
+
+Finally, the magic @code{#12} constant is there for a strange reason,
+as any constant will actually work (even 0).  In ARM, when an
+instruction reads the program counter, the value returned points two
+instructions after the current one.  Here, the PC is read in the first
+machine instruction ever, so it points to the third instruction.  If
+we want the stack to live before the code, we want to subtract three
+instruction lengths.  In @i{thumb} (our case), instructions are
+2-bytes long, but full ARM has 4-byte instructions, so 12 works in
+every case.  Just copying the PC to SP will work as well, but you'll
+overwrite the first two instructions of your program with your stack.
+
+@c ==========================================================================
+@node Compiling boot.S
+@section Compiling boot.S
+
+With the assembly file in place, compilation now fails with
+@code{undefined reference to `thos_main'} and @code{undefined
+reference to `thos_setup'}. That's expected: the two @code{.extern}
+symbols that are marked as @i{undefined} in @code{start.o} are not
+provided by other object files.  The error message we get back
+reports the exact source line where the undefined reference is
+found, this only happens because we used @code{-g} in
+compilation flags.
+
+To quickly fix two undefined symbols, let's simply define two
+empty functions, @i{thos_setup} in @code{io.c} and @i{thos_main} in
+@code{main.c}, as that's the place they'll finally live:
+
+@example
+   int thos_main(void)
+   { return 0; }
+@end example
+
+The function returns an integer value even if at this point we know
+the caller is ignoring such return value. In general, it's good
+practice to always return an error code (instead of @code{void}) even
+in simple functions, because otherwise you risk to change it later, when
+complexity increases as development goes on.
+
+At the end of this chapter we have a complete binary, which does nothing
+but at least compiles and has some real content (here and elsewhere,
+@code{morgana%} is the command prompt of my host):
+
+@example
+   morgana% nm thos | sort
+   10000400 T _thos_start
+   10000428 T thos_setup
+   10000438 T thos_main
+   10000450 B __bss_end
+   10000450 B __bss_start
+@end example
+
+@c ##########################################################################
+@node Loading the Binary
+@chapter Loading the Binary
+
+With a ``working'' binary in our hands, it's now high time to write it
+to the final hardware.  The preferred way to do that is using the
+serial protocol offered by the internal ROM in the CPU.
+
+@menu
+* Pin-strapping::               
+* Creating a Binary File::      
+* UART Programming::            
+@end menu
+
+@c ==========================================================================
+@node Pin-strapping
+@section Pin-strapping
+
+When power is applied to the LPC1343, pin P0_1 selects whether the CPU
+executes the program stored in internal flash or it runs code stored
+in internal ROM.  Such ROM can handle re-programming flash memory
+using the USB interface, or interact through the serial port.  Such
+behavior is selected with pin P0_3: if it is low, the serial port is
+used.
+
+Thus, in my board I added a jumper on P0_3 to force serial
+communication (the jumper on P0_1 was already provided by the
+manufacturer).  With both P0_1 and P0_3 pulled low, you can write to
+RAM or flash using the serial port.  The subdirectory @i{tools} of
+this package includes two programs: @code{program} and @code{progrom},
+they write a binary to either RAM or flash (here called ROM for
+symmetry).
+
+@c ==========================================================================
+@node Creating a Binary File
+@section Creating a Binary File
+
+The binary that must be programmed to the CPU, however, is not the ELF
+file, but a pure binary file, with no header or other extra information.
+To turn our ELF file into a binary we can use @i{objcopy}, with the
+following rule in @i{Makefile}:
+
+@example
+   thos.bin: thos
+           $(OBJCOPY) -O binary $^ $@
+@end example
+
+Note that it is possible for a loading program to directly use the ELF
+file: writing an ELF loader from scratch is a matter of a few hours,
+if you have previous experience half an hour may be more than enough.
+Most other tools, though, load a bare binary file, so I chose to do
+the same here; moreover, by having a binary file on disk you can
+easily compare it with a dump of your flash memory. For disassembly
+we'll still need the ELF file, to see symbolic names in the code.
+
+@c ==========================================================================
+@node UART Programming
+@section UART Programming
+
+The tools can be compiled by running @code{make -C tools}, as I lazily
+won't be changing our @i{Makefile} to build them.  Finally,
+programming with the serial port and @i{tools/program} looks like the
+following (where @code{ostro%} is my shell prompt):
+
+@example
+   ostro% ./tools/program thos.bin
+   Opening serial port /dev/ttyUSB0
+   Forcing boot loader mode
+   Syncronizing... done
+   Identifying... done
+   part number: 3d00002b
+   LPC1343, 32kB Flash, 8kB RAM
+   size is 900
+   W 268436480 900
+   0
+   ....................OK
+@end example
+
+After this, the program mirrors data from @i{stdin} to the serial port
+and from the serial port to @i{stdout}. This will be useful to see the
+output messages of @i{thos}, but at this point there is nothing to
+look at.
+
+@c ##########################################################################
+@node Serial Output
+@chapter Serial Output
+
+One advantage we achieve as a side effect of using the UART port for
+programming, is that the serial port has already been configured for
+115200 baud.  Thus, the first snippet of real code in the OS will be
+some output function.  Let's write a simple @i{putc} and @i{puts},
+both in the @code{io.c} file.
+
+@menu
+* puts::                        
+* An I/O Model::                
+* Defining Registers::          
+* putc::                        
+* The regs Array::              
+* Header and more CFLAGS::      
+* Testing puts::                
+@end menu
+
+@c ==========================================================================
+@node puts
+@section puts
+
+The implementation of @i{puts} is trivial: it just calls
+@i{putc} for each byte until end of string:
+
+@example
+   void puts(char *s)
+   {
+           while (*s)
+                   putc (*s++);
+   }
+@end example
+
+@c ==========================================================================
+@node An I/O Model
+@section An I/O Model
+
+As for @i{putc}, the function must write the next character to the TX
+register in the hardware, but only when there is no outstanding
+transmission, or the byte will be lost.  By looking at the CPU manual,
+we'll easily find the @code{U0THR} register (UART 0 Transmit Holding
+Register) and the @code{U0LSR} register, with its @code{THRE} bit
+(Line Status Register, Transmit Holding Register Empty).
+
+Once the register values are known, the code is pretty simple, however,
+we need to define our I/O primitives: a standardised way to access
+hardware registers.  Here a few approaches are possible. Let's list
+a few possibilities
+
+@table @i
+@item Defining register names like they were variables
+	This approach is pretty common in the small microcontroller-class
+        operating system. The resulting code to write the Transmit Holding
+        Register is somewhat like ``@code{U0THR = c}''.  I personally
+        dislike it because the casual reader of the should know in advance
+        that @code{U0THR} is an hardware register, and hardware accesses
+        are not generally visible in the code.
+
+@item Using @code{readl} and @code{writel} helpers
+	This is the Linux approach.  Every access to registers is performed
+        by pointer and is consistently encapsulated in a special function.
+        It is a very good option, and one worth following; it has the
+        minor disadvantage that readers are expected to know the convention.
+
+@item Using a @code{regs} array to address register
+	It is an alternative way to mark register access. While less
+        widespread than the @i{readl}/@i{writel} helpers, I enjoy the
+        fact it's immediately understood by the casual reader; moreover
+        it helps perusing the linker script, which I find useful for
+        teaching purposes.
+
+@end table
+
+This project, therefore, uses @code{regs} as an array of registers.
+The array is defined extern in a new header, @code{hw.h}, and
+exploits the fact that all registers are 32 bits wide; finally,
+is uses the standard sized type @code{uint32_t} from @code{<stdint.h>}:
+
+@example
+   #include <stdint.h>
+   extern volatile uint32_t regs[];
+@end example
+
+Here, the @code{volatile} attribute is needed to kill compiler
+optimisations over read/write operations concerning the array: every
+read or write operation that appears in source code will actually
+perform a read or write instruction in generated machine code.
+Clearly, also the other I/O approaches listed above hide a
+@code{volatile} keyword somewhere in their implementation.
+
+@c ==========================================================================
+@node Defining Registers
+@section Defining Registers
+
+With @code{regs} properly declared, we need to define register
+names for our needs.  Since the @code{U0THR} register lives at
+address 0x40008000 we'll want that exact number to appear in our
+@code{hw.h}, to ease people grepping for the symbolic name in the
+source code.  The easiest approach in this case is arranging for
+@code{regs} to be 0; the actual registers and bits we need are then
+defined in this way:
+
+@example
+   #define REG_U0THR               (0x40008000 / 4)
+   #define REG_U0LSR               (0x40008014 / 4)
+   #define REG_U0LSR_THRE          0x20
+@end example
+
+Actually, an extra-abstract implementation will use
+@code{sizeof(regs[0])} in place of the explicit 4, but here I prefer
+to assume people knows 32-bit registers are 4-byte long.
+
+The chosen implementation is only one of a number of options, but it
+has a few good points: it preserves the hex number that you find in
+the CPU documentation, re-stresses that such things are registers by
+using @code{REG_} as a prefix, and finally enumerates bits in the name
+space of the hosting register by using a second underscore.
+
+@c ==========================================================================
+@node putc
+@section putc
+
+With the three definitions in place, our @i{putc} turns out to be
+like this:
+
+@example
+   void putc(int c)
+   {
+           if (c == '\n')
+                   putc('\r');
+           while ( !(regs[REG_U0LSR] & REG_U0LSR_THRE) )
+                   ;
+           regs[REG_U0THR] = c;
+   }
+@end example
+
+The function as shown takes also care of newlines: whereas C code uses
+@i{newline} alone to mark newlines, the UART conventions want
+@i{return-newline}, so the fix is performed at output time, to save
+source code from this boring detail.
+
+@c ==========================================================================
+@node The regs Array
+@section The regs Array
+
+The last missing point here is the definition of @code{regs}. This
+is simply done in the linker script, by means of the following line:
+
+@example
+   regs = 0;
+@end example
+
+This is no different from the definition of @code{__bss_start} and
+@code{__bss_end}; the linker script is actually there exactly for this
+reason: defining symbols -- in addition to placing code in memory.
+
+@c ==========================================================================
+@node Header and more CFLAGS
+@section Header and more CFLAGS
+
+To close up this chapter with a working binary, we need a few more
+details, that deserve no discussion, being pretty trivial:
+
+@itemize
+@item Create @code{thos.h} with prototype for all functions.
+@item Include @code{thos.h} in all C sources, including @code{io.c} even
+      if it doesn't call any external functions, to ensure the prototype
+      matches actual code.
+@item Call @i{puts} from @code{main.c}, to exercise the code.
+@item Add @code{-ffreestanding -O2} to @code{CFLAGS} in @i{Makefile}.
+@end itemize
+
+Optimisations are generally needed to make the code better; with the
+current code the overall binary size is reduced from 240 to 176 bytes
+(although actual figures may differ according to the compiler being
+used).
+
+The @i{freestanding} flag is need to avoid the following warnings:
+
+@example
+   thos.h:5: warning: conflicting types for built-in function 'putc'
+   thos.h:6: warning: conflicting types for built-in function 'puts'
+@end example
+
+The compiler knows what are the prototypes for a number of standard-compliant
+functions, so we must clearly state that we are not hosted in a Posix
+environment, thus the @code{-ffreestanding}.
+
+@c ==========================================================================
+@node Testing puts
+@section Testing puts
+
+With the code for this chapter, after programming we get an
+endless stream of:
+
+@example
+   The might Thos is alive
+@end example
+
+The @i{endless} part depends on the fact that @i{thos_main} returns, and
+our assembly code restarts the system after calling @i{thos_main}.
+
+@c ##########################################################################
+@node The Jiffies Variable
+@chapter The Jiffies Variable
+
+The system is now equipped with serial output, which is a great first
+step. We now need a way to handle timing.
+
+@menu
+* The Timer Tick::              
+* Power-on the Timer::          
+* The HZ Macro and thos_setup::  
+* Defining jiffies::            
+* Using Our Time Facility::     
+@end menu
+
+@c ==========================================================================
+@node The Timer Tick
+@section The Timer Tick
+
+The easiest way to handle time is having an integer variable that
+counts timer interrupts. For example once every 10ms.  As a matter of
+facts, the Cortex family of processors has a specific timer-tick
+interrupt line designed for this specific aim.
+
+Unfortunately, handling interrupts is not feasible in a single lesson,
+so we must look for alternatives.  While reading the CPU manual, a
+programmer might notice that the timers of the LPC1343 have a
+32-bit-wide prescaler; this means that the counter register itself can
+count as slowly as needed. For example it can count at 100HZ even if
+the input quartz we are using clocks the system as 12MHz.
+
+@c ==========================================================================
+@node Power-on the Timer
+@section Power-on the Timer
+
+In this specific SoC, when the device is turned on most peripherals are
+powered off until we gate their clock (the UART was already turned on
+only because we used the serial port for programming: the internal ROM
+turned it on and configured it for us).
+
+The first step before doing anything with the code is thus defining
+the registers and bits to configure the timer; let's turn on
+timer 1 (I plan to use timer 0 for an external buzzer I connected
+to pin 0_11):
+
+This is the definitions for the needed registers, preserving the names
+found in the CPU manual:
+
+@example
+   /* clock control */
+   #define REG_AHBCLKCTRL          (0x40048080 / 4)
+   #define REG_AHBCLKCTRL_CT32B0   (1 << 9)
+   #define REG_AHBCLKCTRL_CT32B1   (1 << 10)
+
+   /* counter 1 */
+   #define REG_TMR32B1TCR          (0x40018004 / 4)
+   #define REG_TMR32B1TC           (0x40018008 / 4)
+   #define REG_TMR32B1PR           (0x4001800c / 4)
+@end example
+
+@c ==========================================================================
+@node The HZ Macro and thos_setup
+@section The HZ Macro and thos_setup
+
+To make thing a little abstract, let's also define our frequencies
+in @code{hw.h}, so they can be readily changed when porting to
+a different board using the same CPU:
+
+@example
+   #define THOS_QUARTZ (12 * 1000 * 1000)
+   #define HZ 100
+@end example
+
+The explicit multiplication has been chosen for readability: the
+calculation is performed at compile time and you see at first sight
+that it is 12 millions -- on the other hand, a row of 6 zeroes is
+confusing and you'll find yourself checking it over and over if you
+encounter a bug related to timing.
+
+The choice of @code{HZ} as a short name for our ticking frequency
+is mimicking Linux, which is always a good choice given the huge amount
+of programmers already used to its conventions.
+
+With those additions to our headers, we are ready to fill
+@code{thos_setup}, the function we already have, though empty, in
+@code{io.c}:
+
+@example
+   int thos_setup(void)
+   {
+           regs[REG_AHBCLKCTRL] |= REG_AHBCLKCTRL_CT32B1;
+
+           /* enable timer 1, and count at HZ Hz (currently 100) */
+           regs[REG_TMR32B1TCR] = 1;
+           regs[REG_TMR32B1PR] = (THOS_QUARTZ / HZ) - 1;
+           return 0;
+   }
+@end example
+
+@c ==========================================================================
+@node Defining jiffies
+@section Defining jiffies
+
+@i{jiffies} is now counting ad 100Hz. We only need to see it from C
+code: following Linux tradition, let's declare it in @code{thos.h} and
+define it in the linker script, with the following two lines, one per
+file:
+
+@example
+   extern volatile unsigned long jiffies;
+
+   jiffies = 0x40018008;
+@end example
+
+Note that we might have defined @i{jiffies} in terms of @code{regs},
+without using the linker script again, or we could have used the name
+@code{REG_TMR32B1TC} by using the C preprocessor over the linker script.
+There are always several ways to achieve the same result, and you are
+free to change to code to test different implementations, this is only
+my personal choice for the sake of simplicity.
+
+@c ==========================================================================
+@node Using Our Time Facility
+@section Using Our Time Facility
+
+As a final step in this chapter , let's now exercise the @i{jiffies}
+variable: our main function can print its self-promotion string once
+per second:
+
+@example
+   int thos_main(void)
+   {
+           unsigned long j = jiffies;
+           while (1) {
+                   puts("The might Thos is alive\n");
+                   j += HZ;
+                   while (jiffies < j)
+                           ;
+           }
+   }  
+@end example
+
+The code, simple as it is, works perfectly once programmed to
+the target CPU.
+
+@c ##########################################################################
+@node The Task Model
+@chapter The Task Model
+
+The OS is now in good shape. It has messaging and a time source; it
+only needs a task model. To avoid introducing interrupts, which
+wouldn't fit in the available time, let's use cooperative multi-asking:
+each @i{task} is implemented by time-based @i{jobs} (the names being
+used here are common the real-time world).  A job is simply a function
+that returns when done.
+
+@menu
+* Defining a Task Structure::   
+* Stuffing Tasks in an ELF Section::  
+* Using Wildcards in Makefile::  
+* Three Simple Tasks::          
+* Writing the Scheduler::       
+* Task-set Initialisation::     
+* Running the Task Set::        
+@end menu
+
+@c ==========================================================================
+@node Defining a Task Structure
+@section Defining a Task Structure
+
+Considering that most tasks you need to accomplish can be reasonably
+modelled as a state machine, the job function can receive its current
+state as an argument and pass the next state as return value to the
+caller.  The most generic state is a @code{void *}, because it can
+either be casted as a simple number or used to point to a more complex
+structure.
+
+The data structure we need is therefore as follows, in @code{thos.h}:
+
+@example
+   struct thos_task {
+           char *name;
+           void *(*job)(void *);
+           int (*init)(void *);
+           void *arg;
+           unsigned long period;
+           unsigned long release;
+   };
+@end example
+
+The @code{name} field is there for informational purposes, @code{job}
+is the state-machine and @code{init} allows to decouple any setting up
+of the hardware.
+
+The @code{init} function receives the same argument as the job itself
+so it can behave differently according to its context, the same effect
+can be achieved by passing a pointer to @code{struct task} (i.e. to
+itself). I discourage from being lazy in parameter passing, especially
+for functions that are not in the critical execution path.  For the
+same reason, @code{init} returns @code{int}, so the system may be
+extended to handle initialization failures, should the need arise.
+
+The @code{release} field is the release time for the job: it is
+initialised to the first activation time and then modified by the
+scheduler according to @code{period}, each time the job runs.
+
+@c ==========================================================================
+@node Stuffing Tasks in an ELF Section
+@section Stuffing Tasks in an ELF Section
+
+The @i{thos} operating system is one of the conventional real-time
+operating systems that are built as a single binary images, which
+includes all compile-time defined tasks in a single blob.
+
+The easy way to arrange compile-time static sets is by building
+arrays.  Instead of making an array for a predefined maximum number of
+tasks, we'd rather make an array of just the right size.  The best
+way to do this is by juxtaposing data structures and bless the
+boundaries of the data area with two symbolic names.
+
+By building a @code{.task} ELF section we can easily achieve that.
+The @i{gcc} compiler offers the @code{__attribute__} construct to
+assign code or data to specific sections, overriding the default one
+(@code{.text} for functions and @code{.data} or @code{.bss} for variables);
+
+To hide the hairy @code{__attribute__} syntax from the user, let's add
+this definition in @code{thos.h}:
+
+@example
+   #define __task __attribute__((section(".task"),__used__))
+@end example
+
+We need @code{__used__} in order to be able to declare the structure
+as @code{static} within the file where it is defined.  As a side
+effect, if we forget to spell out our @code{__task} macro the compiler
+will warn about a static structure being defined but not used.
+
+The linker script must collate all input @code{.task} sections into
+an output section, adding symbolic names in the usual form at the
+boundaries of such sections:
+
+@example
+   __task_begin = .;
+   .task : {*(.task) }
+   __task_end = .;
+@end example
+
+Finally, the two extern symbols are defined in @code{thos.h}:
+
+@example
+   extern struct thos_task __task_begin[], __task_end[];
+@end example
+
+@c ==========================================================================
+@node Using Wildcards in Makefile
+@section Using Wildcards in Makefile
+
+I am a lazy typist, and I get upset whenever i need to edit a file to
+activate a feature; so, I want my users to be able to just drop-in new
+tasks in the @i{thos} directory and have them run, without manually
+editing a task list.  The ELF section helped, but there is still the
+@code{Makefile} to be edited.
+
+I a burst of extra-laziness, let's use wildcards in the @code{Makefile}:
+
+@example
+    TSRC = $(wildcard task-*.c)
+    TOBJ = $(TSRC:.c=.o)
+
+    thos: boot.o io.o main.o $(TOBJ)
+@end example
+
+This is a bad idea in many situations, because whenever you make a
+backup copy of a source file in the same directory, you'll find that
+both files get compiled and the linker complains about duplicate
+symbols.  However, I find it handy in small projects, especially
+because I can drop-in a task that plays music without any edit
+-- this will happen in the next release of this document.
+
+The commit for this chapter also includes a @code{make clean} target,
+which is useful in a system with no support for real dependencies.
+
+@c ==========================================================================
+@node Three Simple Tasks
+@section Three Simple Tasks
+
+Let's write a few tasks that print strings on a timely basis. We can
+use a single job function, with a different argument. The source
+file is called @code{task-uart.c}:
+
+@example
+   #include "thos.h"
+   #include "hw.h"
+
+   static void *uart_out(void *arg)
+   {
+   	char *s = arg;
+   	puts(s);
+   	return arg;
+   }
+
+   static struct thos_task __task t_quarter = {
+   	.name = "quarter", .period = HZ/4,
+   	.job = uart_out, .arg = "."
+   };
+
+   static struct thos_task __task t_second = {
+   	.name = "second", .period = HZ,
+   	.job = uart_out, .arg = "S",
+   	.release = 1,
+   };
+@end example
+
+The actual file includes two more tasks, one running every 10s and one
+running every minute. There's nothing strange in these few lines, with
+the exception of the @code{release} field.
+
+The @code{release} field states when the task's job must be first
+invoked; if several jobs are released at the same time, the scheduler
+will have to choose the order of activation. By forcing a different
+activation time for each task we can release the scheduler from
+working on priorities.  Once again, the choice is dictated by the lack
+of time -- the two hours are almost over, so we must hurry to meet the
+deadline.
+
+@c ==========================================================================
+@node Writing the Scheduler
+@section Writing the Scheduler
+
+The scheduler is really simple: it must select which task is next to run,
+wait for its activation time to arrive, and call it. We put it inside
+@code{main.c}, after the @i{mighty} hello message:
+
+@example
+   while (1) {
+           struct thos_task *t, *p;
+
+           for (t = p = __task_begin; p < __task_end; p++)
+                   if (p->release < t->release)
+                           t = p;
+           while ((signed)(t->release - jiffies) > 0)
+                   ;
+           t->arg = t->job(t->arg);
+           t->release += t->period;
+   }
+@end example
+
+In the trivial code above, @code{t} is the selected task, and @code{p}
+is a pointer that scans the array.
+
+The @i{jiffies} comparison needs a cast to @code{signed} because the
+values are unsigned: without the cast any value different from 0 would
+be considered greater than zero.  Note that in Linux this detail is
+hidden in a @code{time_before()} macro, that also makes the code more
+readable. Had we used @code{jiffies < t->release} the code would have
+failed after 497 days; not a real problem here, but it's a good habit
+to always deal with overflows.
+
+@c ==========================================================================
+@node Task-set Initialisation
+@section Task-set Initialisation
+
+Something is missing here in the code just shown: we have no idea
+about what the initial value of @i{jiffies} is, and we are not allowed
+to write it (even if it was a software counter, modifying a variable
+that is being read by several users is bad practice and should be
+avoided as much as possible).
+
+The solution is simple: just add ``@code{jiffies + 2}'' to all
+activation times before using them. Actually, we take a snapshot
+of @i{jiffies} in a new variable, called @code{now}, and then we
+add ``@code{now + 2}'', because @i{jiffies} may have been incremented
+between two reads:
+
+@example
+   now = jiffies;
+   for (p = __task_begin; p < __task_end; p++)
+           p->release += now + 2;
+@end example
+
+We could add ``@code{now}'', but then the first activation time
+will already have expired, and we'd have wrong timing at each boot; not
+a real issue, but it is easily avoided.  We could add ``@code{now + 1}'',
+which is expected to be in the future, but is may be in the past by the
+time we completed the loop.  Using @code{now + 2} is surely in the future,
+even if @i{jiffies} is incremented immediately after we took our
+snapshot into @code{now}: the loop takes less than 10ms in a 12MHz CPU,
+however long the task list may be.
+
+Finally, let's use the @code{name} field in the task list, this is a good
+diagnostic aid to verify that everything went in place despite use of
+an obscure ELF section. In this same loop we'll als call the @i{init}
+method of each task, if assigned:
+
+@example
+   for (p = __task_begin; p < __task_end; p++) {
+           puts("Task: "); puts(p->name); putc('\n');
+           if (p->init) p->init(p->arg);
+   }
+@end example
+
+This loop must run before the @code{release} times are updated,
+because UART output is slow: at 115200 baud we have output only 11
+bytes per millisecond.
+
+@c ==========================================================================
+@node Running the Task Set
+@section Running the Task Set
+
+We are really done: let's just run @code{./tools/program thos.bin}
+to see that things do really work:
+
+@example
+   [...]
+   ....................OK
+   The might Thos is alive
+   Task: minute
+   Task: 10second
+   Task: second
+   Task: quarter
+   .S
+   minute!
+   ....S....S....S....S....S....S....S....S....S....S
+   ....S....S....S....S....S....S....S....S....S....S
+   ....S....S....S....S....S....S....S....S....S....S
+   ....S....S....S....S....S....S....S....S....S....S
+   ....S....S....S....S....S....S....S....S....S....S
+   ....S....S....S....S....S....S....S....S....S....S
+   minute!
+   ....S....S....S....S....S....S....S....S....S....S
+   ....S....S....S....S....S....S....S....S....S....S
+   ....S....S....S....S....S....S....S....S....S....S
+@end example
+
+@c ##########################################################################
+@node GPIO Output
+@chapter GPIO Output
+
+My major disappointment with the current code is that the OS provides
+for tasks as state machines, but the feature is not being used. There
+is also support for an @i{init} method, but nobody is using it.
+
+This chapter adds a new task, one that flips 4 bits, each connected to
+a LED. Bits 0,1,2,3 of GPIO port 3 are connected to leds, so
+they are perfect for us.
+
+By checking the CPU manual we find we need two new registers in
+@code{hw.h}, shown below, and one bit in the control register
+(@code{REG_AHBCLKCTRL_GPIO}), not shown here:
+
+@example
+   #define REG_GPIO3DAT            (0x50033ffc / 4)
+   #define REG_GPIO3DIR            (0x50038000 / 4)
+@end example
+
+The source file is called @code{task-led.c} and no other file
+is changed, as we have wildcard support in @code{Makefile}.
+The job runs 5 times per second and features a running light
+with a period of 1 second: 4 states turn on one led, in sequence,
+and the last state has all leds turned off.
+
+Mi initial example was shorter (used 4 states, so no @code{if}
+nor @code{switch} was needed) but this is more realistic as
+a state machine:
+
+@example
+   static int led_init(void *unused)
+   {
+           regs[REG_AHBCLKCTRL] |= REG_AHBCLKCTRL_GPIO;
+           regs[REG_GPIO3DIR] |= 0xf;
+           return 0;
+   }
+
+   static void *led(void *arg)
+   {
+           int value, state = (int)arg;
+
+           if (state > 4)
+                   state = 0;
+           switch (state) {
+           case 4:
+                   value = 0; /* all off */
+                   break;
+           default:
+                   value = 1 << state;
+                   break;
+           }
+           regs[REG_GPIO3DAT] =  0xf & ~value;
+           return (void *)(state + 1);
+   }
+
+   static struct thos_task __task t_led = {
+           .name = "leds", .period = HZ / 5,
+           .init = led_init, .job = led,
+           .release = 10
+   };
+@end example
+
+Needless to say, it works as expected, concurrently with the tasks
+that print messages to the serial port.
+
+@c ##########################################################################
+@node The Future of Thos
+@chapter The Future of Thos
+
+This is release 2011-04 of the package even if I missed my deadline,
+and it's already May 2011 as I publish this.  I plan to have release
+2011-05 pretty soon, with a task that plays a tune using a PC buzzer;
+I already have the code for ARM7, it's just a matter of porting
+@code{task-pwm.c} and dropping it in the source directory.
+
+Then, I plan to add two subdirectories to this package:
+@code{thos-arm7/} and @code{thos-avr/}, the former with my original
+code for ARM7 (which is simpler because of the simpler hardware) and
+the latter with a port to the AVR processor, used in the famous
+Arduino project.  Writing bare-metal code for Arduino is more
+difficult than writing for LPC-family ARM, because the code can only
+live in Flash memory, and the UART must be set up by the OS: there is
+no ROM preconfiguring it for us.
+
+Hope you enjoyed this, and you'll get the incentive to write your own
+OS sooner or later. In the 20th century real people didn't call
+themselves programmers until they wrote their own editor; in this
+millennium writing an OS is easier than writing an editor, so you have
+no excuse -- even if writing an HTTP server is still easier, if you can
+count on a working TCP implementation.
+
+@c ##########################################################################
+@iftex
+@contents
+@end iftex
+
+@bye
+@c  LocalWords:  thos Olimex README rubini gnudd Alessandro titlepage texinfo
+@c  LocalWords:  iftex smallexample linux CFLAGS LDFLAGS ASFLAGS rodata objdump
+@c  LocalWords:  GPIO LocalWords objcopy putc THRE microcontroller regs readl
+@c  LocalWords:  writel init struct Arduino HTTP
