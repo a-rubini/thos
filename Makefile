@@ -13,6 +13,9 @@ OBJDUMP         = $(CROSS_COMPILE)objdump
 CFLAGS  = -march=armv7-m -mthumb -g -Wall
 ASFLAGS = -march=armv7-m -mthumb -g -Wall
 
+# Use our own linker script
+LDFLAGS = -T thos.lds
+
 # Our target
 thos: boot.o io.o main.o
 	$(LD) $(LDFLAGS) $^ -o $@
