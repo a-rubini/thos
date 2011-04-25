@@ -1,0 +1,11 @@
+
+
+./dump
+	gets start and len and dumps to stdout
+
+./program
+	gets a file and programs it to RAM, then calling it.
+
+./progrom
+	programs to rom (flash) and calls it after remapping
+
