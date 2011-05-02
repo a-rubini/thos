@@ -2,7 +2,14 @@
 #include "hw.h"
 
 int thos_setup(void)
-{ return 0; }
+{
+	regs[REG_AHBCLKCTRL] |= REG_AHBCLKCTRL_CT32B1;
+
+	/* enable timer 1, and count at HZ Hz (currently 100) */
+	regs[REG_TMR32B1TCR] = 1;
+	regs[REG_TMR32B1PR] = (THOS_QUARTZ / HZ) - 1;
+	return 0;
+}
 
 void putc(int c)
 {

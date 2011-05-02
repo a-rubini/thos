@@ -3,6 +3,7 @@ OUTPUT_ARCH(arm)
 ENTRY(_thos_start)
 
 regs = 0;
+jiffies = 0x40018008;
 
 SECTIONS
 {
