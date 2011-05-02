@@ -1,2 +1,7 @@
+#include "thos.h"
+
 int thos_main(void)
-{ return 0; }
+{
+	puts("The might Thos is alive\n");
+	return 0;
+}

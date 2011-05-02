@@ -10,7 +10,7 @@ OBJCOPY         = $(CROSS_COMPILE)objcopy
 OBJDUMP         = $(CROSS_COMPILE)objdump
 
 # Using thumb for version 7 ARM core:
-CFLAGS  = -march=armv7-m -mthumb -g -Wall
+CFLAGS  = -march=armv7-m -mthumb -g -Wall -ffreestanding -O2
 ASFLAGS = -march=armv7-m -mthumb -g -Wall
 
 # Use our own linker script
