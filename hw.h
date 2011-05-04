@@ -14,9 +14,14 @@ extern volatile uint32_t regs[];
 /* clock control */
 #define REG_AHBCLKCTRL		(0x40048080 / 4)
 #define REG_AHBCLKCTRL_CT32B0	(1 << 9)
-#define REG_AHBCLKCTRL_CT32B1	(1 << 10)
+#define REG_AHBCLKCTRL_CT32B0	(1 << 9)
+#define REG_AHBCLKCTRL_GPIO	(1 << 6)
 
 /* counter 1 */
 #define REG_TMR32B1TCR		(0x40018004 / 4)
 #define REG_TMR32B1TC		(0x40018008 / 4)
 #define REG_TMR32B1PR		(0x4001800c / 4)
+
+/* gpio port 3 */
+#define REG_GPIO3DAT		(0x50033ffc / 4)
+#define REG_GPIO3DIR		(0x50038000 / 4)
