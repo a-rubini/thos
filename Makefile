@@ -16,9 +16,16 @@ ASFLAGS = -march=armv7-m -mthumb -g -Wall
 # Use our own linker script
 LDFLAGS = -T thos.lds
 
+# Task source files and objects
+TSRC = $(wildcard task-*.c)
+TOBJ = $(TSRC:.c=.o)
+
 # Our target
 thos.bin: thos
 	$(OBJCOPY) -O binary $^ $@
 
-thos: boot.o io.o main.o
+thos: boot.o io.o main.o $(TOBJ)
 	$(LD) $(LDFLAGS) $^ -o $@
+
+clean:
+	rm -f thos.bin thos *.o *~
