@@ -6,7 +6,7 @@ int thos_main(void)
 	struct thos_task *p;
 	unsigned long now;
 
-	puts("The might Thos is alive\n");
+	puts("The mighty Thos is alive\n");
 
 	for (p = __task_begin; p < __task_end; p++) {
 		puts("Task: "); puts(p->name); putc('\n');
