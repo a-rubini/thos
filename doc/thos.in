@@ -98,6 +98,7 @@ typed live in a single lesson.
 * The Jiffies Variable::        
 * The Task Model::              
 * GPIO Output::                 
+* The Buzzer::                  
 * The Future of Thos::          
 @end menu
 
@@ -1332,20 +1333,164 @@ Needless to say, it works as expected, concurrently with the tasks
 that print messages to the serial port.
 
 @c ##########################################################################
+@node The Buzzer
+@chapter The Buzzer
+
+The two hours of my lesson are now over, but there is no strict time
+limit in the written document. Thus, I'd like to introduce a new task,
+one that plays a tune on a buzzer. The new task is not adding anything
+to the OS core, it's just a new task in the set.
+
+@menu
+* Buzzer Hardware::             
+* Defining the Tune::           
+* Defining the Notes::          
+* The PWM Task::                
+@end menu
+
+@c ==========================================================================
+@node Buzzer Hardware
+@section Buzzer Hardware
+
+The hardware being used for playing music is a common buzzer or
+loudspeaker (one of those you can steal from a dead PC). It is
+connected to ground and the P0_1, where one of the PWM signals
+of timer 0 can be output.
+
+@image{speaker, 8cm}
+
+@c ==========================================================================
+@node Defining the Tune
+@section Defining the Tune
+
+
+The patch called ``The Buzzer'' in the repository adds a new file,
+@code{task-pwm.c} and augments @code{hw.h} with the register names
+we need to setup the counter 0. No other changes are needed.
+
+The task is designed as a state machine referencing a global
+@code{tune} variable. The variable is a text string naming
+the notes and pauses; the current state of the state machine
+is a pointer to the next character in the string. when at end-of-string
+the pointer is reset to the beginning of the @code{tune} string.
+note that this is suboptimal: the task code
+itself can run two state machines concurrently because @code{tune}
+is global. The correct fix would be in defining a structure with
+two fields as task status: one field should be the tune strings for
+the task and the other a running pointer to the current note.
+
+The tune being played is the following string, which I suspect is
+a blatant violation of copyright on my side. Thus, sharing and
+distributing Thos in its current version is a crime, you are warned.
+
+@example
+   static char tune[] =
+           "f f f a c c ccc d d d b ccc aaa "
+           "f f f f a a a a g g g g fffff   "
+           "                                ";
+@end example
+
+@c ==========================================================================
+@node Defining the Notes
+@section Defining the Notes
+
+The notes themselves are identified by their frequency: knowing that
+a semitone is the twelfth root of two and A is exactly 440Hz, this is
+the definition of our notes:
+
+@example
+   #define HALF 1.05946309435929526455 /* exp(2, 1/12) */
+   #define TONE (HALF*HALF)
+
+   #define F    (G/TONE)
+   #define G    (A/TONE)
+   #define A    440.0
+   #define B    (A*HALF) /* moll */
+   #define C    (B*TONE)
+   #define D    (C*TONE)
+@end example
+
+Each note is output as a square wave. The counter is programmed to run
+a 4-cycles loop with a 50% duty cycle; the actual frequency is set by
+changing the prescaler register to reach the desired output frequency.
+Values to be written in the prescaler are stored in a table, built
+at compile time from the constant frequencies we defined earlier:
+
+@example
+   struct note {
+           char name;
+           int period;
+   };
+
+   #define PWM_FREQ (THOS_QUARTZ / 4) /* we make a 4-cycles-long pwm */
+
+   struct note table[] = {
+           {'f', (PWM_FREQ/F) + 0.5},
+           {'g', (PWM_FREQ/G) + 0.5},
+           {'a', (PWM_FREQ/A) + 0.5},
+           {'b', (PWM_FREQ/B) + 0.5},
+           {'c', (PWM_FREQ/C) + 0.5},
+           {'d', (PWM_FREQ/D) + 0.5},
+           {0, ~0}, /* pause */
+   };
+@end example
+
+Our processor has no floating point unit, but the compiler converts
+the frequency values to integer when assigning the @code{period} field
+at compile time.
+
+@c ==========================================================================
+@node The PWM Task
+@section The PWM Task
+
+Based on the table just shown and the tune string, this is the code of
+the task that plays the tune (I won't show the boring @code{pwm_init}
+function, which is part of the released code anyways):
+
+@example
+   static void *pwm(void *arg)
+   {
+           char *s = arg;
+           struct note *n = table;
+
+           if (!s || !*s) s = tune; /* lazy */
+
+           /* look for freq */
+           for (n = table; n->name && n->name != *s; n++)
+                   ;
+
+           /* activate it by writing the prescaler and resetting the timer */
+           regs[REG_TMR32B0PR] = n->period;
+           regs[REG_TMR32B0TCR] = 3;
+           regs[REG_TMR32B0TCR] = 1;
+
+           return s + 1;
+
+   }
+@end example
+
+At the beginning of operation (when @code{arg} is null) and at end of
+string the @code{s} variable is reset to the beginning of our tune;
+then the table is looked up, and the last entry is used for every
+unkwnown note (the blank character thus count as pause, like any other
+non-note ASCII value).
+
+The task is then defined as usual, running at a frequency of @code{HZ
+/ 10}.
+
+@c ##########################################################################
 @node The Future of Thos
 @chapter The Future of Thos
 
-This is release 2011-04 of the package even if I missed my deadline,
-and it's already May 2011 as I publish this.  I plan to have release
-2011-05 pretty soon, with a task that plays a tune using a PC buzzer;
-I already have the code for ARM7, it's just a matter of porting
-@code{task-pwm.c} and dropping it in the source directory.
+This version is release 2011-04 of the package with the PWM added.
 
-Then, I plan to add two subdirectories to this package:
-@code{thos-arm7/} and @code{thos-avr/}, the former with my original
-code for ARM7 (which is simpler because of the simpler hardware) and
-the latter with a port to the AVR processor, used in the famous
-Arduino project.  Writing bare-metal code for Arduino is more
+It's already May 2011 as I publish this and I plan to have release
+2011-05 really soon.  The release will support the LPC-2104 processor
+(an ARM7 thing) in addition to the Cortex-M3 -- I already have
+the ARM7 code, it's just a matter of writing documentation.
+
+I also plan to port to the 8-bit AVR processor, in one of the
+``Arduino'' incantations.  Writing bare-metal code for Arduino is more
 difficult than writing for LPC-family ARM, because the code can only
 live in Flash memory, and the UART must be set up by the OS: there is
 no ROM preconfiguring it for us.
