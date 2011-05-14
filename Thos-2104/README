@@ -1,0 +1,18 @@
+
+This is the "Two Hour Operating System", material that I've been
+presenting in a 2-hour lesson a few times since September 2010.
+
+Initially I've been using an ARM7 system (LPC2104, mounted in the
+"christmas tree" board by Embedded Artists).  The tree is not sold any
+more, so this version is based on a Cortex-M3 (LPC1343, mounted in a
+simple board by Olimex.  I may add the ARM7 implementation or other
+ones as subdirectories, over time.
+
+All documentation is in doc/ (you need TeX and Texinfo to compile it,
+but if you download the tarball, output files are already there.
+
+I may re-release this thing with a little updates (or ports to other
+embedded CPU cores) over time, but not more than once per month.
+
+Enjoy
+/alessandro
