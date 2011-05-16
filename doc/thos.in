@@ -33,8 +33,8 @@
 
 @setchapternewpage off
 
-@set update-month April 2011
-@set release v2011-04
+@set update-month May 2011
+@set release v2011-05
 
 @finalout
 
@@ -99,6 +99,7 @@ typed live in a single lesson.
 * The Task Model::              
 * GPIO Output::                 
 * The Buzzer::                  
+* Thos on ARM-7::               
 * The Future of Thos::          
 @end menu
 
@@ -825,7 +826,7 @@ With the code for this chapter, after programming we get an
 endless stream of:
 
 @example
-   The might Thos is alive
+   The mighty Thos is alive
 @end example
 
 The @i{endless} part depends on the fact that @i{thos_main} returns, and
@@ -965,7 +966,7 @@ per second:
    {
            unsigned long j = jiffies;
            while (1) {
-                   puts("The might Thos is alive\n");
+                   puts("The mighty Thos is alive\n");
                    j += HZ;
                    while (jiffies < j)
                            ;
@@ -1246,7 +1247,7 @@ to see that things do really work:
 @example
    [...]
    ....................OK
-   The might Thos is alive
+   The mighty Thos is alive
    Task: minute
    Task: 10second
    Task: second
@@ -1479,21 +1480,57 @@ The task is then defined as usual, running at a frequency of @code{HZ
 / 10}.
 
 @c ##########################################################################
+@node Thos on ARM-7
+@chapter Thos on ARM-7
+
+I initially wrote Thos on the LPC-2104 processor, in the ``Christmas Tree''
+evaluation board.
+
+@image{ctree, 8cm}
+
+After writing the LPC-1343 version, described in this document, I
+ported the code back to the Christmas Tree, and put it in the
+@code{Thos-2104} subdirectory.  The code is slightly simpler, as the
+older device had less details to deal with. Besides, it had a serial
+port already connected, so using the UART for programming and messaging
+was definitely easier than it is now.
+
+The main differences are in register names and values (i.e.,
+@code{hw.h}). Other dissimilarities are as follows:
+
+@itemize
+@item The peripheral clock is 1/4 of the quartz frequency.
+@item There is no need to turn on the peripherals, as the are all on by default.
+@item The @code{CFLAGS} have no arch-specific flags.
+@item The buzzer has slightly different code.
+@end itemize
+
+The last item depends on the different kind of device being used: the
+buzzer you find on modern PC cases is a replacement for a loudspeaker,
+so you driver it with a square wave of the desired frequency.  The one
+mounted on the Christmas Tree is self-oscillating, and ticks at a few
+kilohertz when powered on -- for this reason the code is making a short
+positive pulse in the PWM output, changing the overall frequency.
+
+As for programming, I ported the @code{tools/} programs back to ARM-7
+where they were originally born. The current version works with both
+chip families, and can write either to RAM or to Flash memory, even
+though the code shown here only works from RAM -- the LPC-21xx family
+has no USB-storage capabilities.
+
+@c ##########################################################################
 @node The Future of Thos
 @chapter The Future of Thos
 
-This version is release 2011-04 of the package with the PWM added.
+I feel I'm almost done with Thos, unless there are bugs to fix (like a
+I fixed a major typo in original code after release 2011-04).
 
-It's already May 2011 as I publish this and I plan to have release
-2011-05 really soon.  The release will support the LPC-2104 processor
-(an ARM7 thing) in addition to the Cortex-M3 -- I already have
-the ARM7 code, it's just a matter of writing documentation.
-
-I also plan to port to the 8-bit AVR processor, in one of the
-``Arduino'' incantations.  Writing bare-metal code for Arduino is more
+What I'm trying to do now is porting to the ATmega8 processor,
+in one of the ``Arduino'' forms.  Writing bare-metal code for Arduino is more
 difficult than writing for LPC-family ARM, because the code can only
 live in Flash memory, and the UART must be set up by the OS: there is
-no ROM preconfiguring it for us.
+no ROM preconfiguring it for us.  Currently, the @code{boot.S}
+and UART are working, and I'm working on  the @i{jiffies} abstraction.
 
 Hope you enjoyed this, and you'll get the incentive to write your own
 OS sooner or later. In the 20th century real people didn't call
