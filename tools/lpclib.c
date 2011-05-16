@@ -10,17 +10,65 @@
 #include "lpclib.h"
 
 /*
+ * 00: e59f0008     ldr     r0, [pc, #8]    ; 10
+ * 04: e3a01001     mov     r1, #1  ; 0x1
+ * 08: e5801000     str     r1, [r0]
+ * 0c: e12fff1e     bx      lr
+ * 10: e01fc040     .word   0xe01fc040
+ */
+static unsigned char code_arm7[] = {
+	0x08, 0x00, 0x9f, 0xe5,
+	0x01, 0x10, 0xa0, 0xe3,
+	0x00, 0x10, 0x80, 0xe5,
+	0x1e, 0xff, 0x2f, 0xe1,
+	0x40, 0xc0, 0x1f, 0xe0
+};
+static struct lpc_type lpc_arm7 = {
+	.ram_addr = 0x40000400,
+	.default_clock = 14745600,
+	.mode = 'A',
+	.sector_size = 0x2000,
+	.checksum_vector = 5,
+	.code = code_arm7,
+	.codesize = sizeof(code_arm7)
+};
+
+/*
+ *  0:   f248 0300       movw    r3, #32768      ; 0x8000
+ *  4:   f2c4 0304       movt    r3, #16388      ; 0x4004
+ *  8:   2202            movs    r2, #2
+ *  a:   601a            str     r2, [r3, #0]
+ *  c:   4770            bx      lr
+ *  e:   bf00            nop
+ */
+static unsigned char code_cortex[] = {
+	0x48, 0xf2, 0x00, 0x03,
+	0xc4, 0xf2, 0x04, 0x03,
+	0x02, 0x22, 0x1a, 0x60,
+	0x70, 0x47, 0x00, 0xbf
+};
+static struct lpc_type lpc_cortex = {
+	.ram_addr = 0x10000400,
+	.default_clock = 12000000,
+	.mode = 'T',
+	.sector_size = 0x1000,
+	.checksum_vector = 7,
+	.code = code_cortex,
+	.codesize = sizeof(code_cortex)
+};
+
+/*
  * device table
  */
 struct lpc_dev lpc_devs[] = {
-	{0xFFF0FF12, 2104, 120, 16},
-	{0xFFF0FF22, 2105, 120, 32},
-	{0xFFF0FF32, 2106, 120, 64},
+	{0xFFF0FF12, 2104, 120, 16, &lpc_arm7},
+	{0xFFF0FF22, 2105, 120, 32, &lpc_arm7},
+	{0xFFF0FF32, 2106, 120, 64, &lpc_arm7},
+	{0x2c42502b, 1311,   8,  4, &lpc_cortex},
+	{0x2c40102b, 1313,  32,  8, &lpc_cortex},
+	{0x3d01402b, 1342,  16,  4, &lpc_cortex},
+	{0x3d00002b, 1343,  32,  8, &lpc_cortex},
 	/* the table is incomplete */
-	{0x2c42502b, 1311,   8,  4},
-	{0x2c40102b, 1313,  32,  8},
-	{0x3d01402b, 1342,  16,  4},
-	{0x3d00002b, 1343,  32,  8},
 	{0,}
 };
 
@@ -120,6 +168,10 @@ int lpc_fd_sync(int fd, int clk)
 		return -1;
 	if (strncmp(reply, "OK", 2))
 		return -1;
+
+	/* It is mandatory to exchange the clock, it seems */
+	if (!clk)
+		clk = 14746;
 	sprintf(s, "%i\r\n", clk);
 	if ( (reply = lpc_write_c(fd, s, 2))  == NULL)
 		return -1;
@@ -204,43 +256,29 @@ int lpc_uudecode(char *in, unsigned char *out)
 }
 
 /*
- * Map user flash (or vectors are still ROM ones) at 0x40048000
+ * Map user flash (or vectors are still ROM ones).
+ * Address is 0x40048000 for cortex-m3, and 0xe01fc040 for arm7
  */
-int lpc_map_user_flash(int fd)
+int lpc_map_user_flash(int fd, struct lpc_type *type)
 {
 	char s[32];
 	char *reply;
-
-	/* The "W" command only accepts RAM addresses. So send code:
-	 *  0:   f248 0300       movw    r3, #32768      ; 0x8000
-	 *  4:   f2c4 0304       movt    r3, #16388      ; 0x4004
-	 *  8:   2202            movs    r2, #2
-	 *  a:   601a            str     r2, [r3, #0]
-	 *  c:   4770            bx      lr
-	 *  e:   bf00            nop
-	 */
-	static unsigned char code[] = {
-		0x48, 0xf2, 0x00, 0x03,
-		0xc4, 0xf2, 0x04, 0x03,
-		0x02, 0x22, 0x1a, 0x60,
-		0x70, 0x47, 0x00, 0xbf
-	};
 	int i, check = 0;
 
-	sprintf(s, "W %u %i\r\n", 0x10000400, sizeof(code));
+	sprintf(s, "W %lu %i\r\n", type->ram_addr, type->codesize);
 	reply = lpc_write_c(fd, s, 2); /* echo and error code */
-	lpc_uuencode(code, sizeof(code), s);
+	lpc_uuencode(type->code, type->codesize, s);
 	strcat(s, "\r\n");
 	lpc_write_c(fd, s, 1);
-	for (i = 0; i < sizeof(code); i++)
-		check += code[i];
+	for (i = 0; i < type->codesize; i++)
+		check += type->code[i];
 	sprintf(s, "%i\r\n", check);
 	reply = lpc_write_c(fd, s, 2);
 	fprintf(stderr, "Sent memmap code: %s", reply);
 	/* Then unlock and go. Oh boring... */
 	sprintf(s, "U 23130\r\n");
 	lpc_write_c(fd, s, 2);
-	sprintf(s, "G %i T\r\n", 0x10000400);
+	sprintf(s, "G %lu %c\r\n", type->ram_addr, type->mode);
 	lpc_write_c(fd, s, 2);
 	return 0;
 }

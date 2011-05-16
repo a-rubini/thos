@@ -12,10 +12,25 @@
 #define LPC_PORT "/dev/ttyUSB0"
 #define LPC_CLK 14746
 
+/* This stuff supports both arm7 and cortex-m */
+struct lpc_type {
+	unsigned long ram_addr;
+	unsigned long default_clock;
+	int mode; /* 'A' or 'T' */
+	int sector_size;
+	int checksum_vector;
+
+	/* for "map_user_flash" */
+	unsigned long remap_addr;
+	unsigned char *code;
+	int codesize;
+};
+
 /* device table */
 struct lpc_dev {
 	unsigned long id;
 	int name, rom, ram;
+	struct lpc_type *type;
 };
 extern struct lpc_dev lpc_devs[];
 
@@ -48,6 +63,6 @@ extern void lpc_uuencode(unsigned char *in, int c, char *out);
 extern int lpc_uudecode(char *in, unsigned char *out);
 
 /* map user flash by calling a short program on the target */
-int lpc_map_user_flash(int fd);
+int lpc_map_user_flash(int fd, struct lpc_type *type);
 
 #endif /* __LPCLIB_H__ */

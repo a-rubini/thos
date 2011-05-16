@@ -19,8 +19,8 @@ static void errorexit(char **argv, char *reason)
 	fprintf(stderr, "%s: Usage: \"%s <start> <len>\n", argv[0], argv[0]);
 	fprintf(stderr, "    $LPC_PORT is the serial port (default %s)\n",
 		LPC_PORT);
-	fprintf(stderr, "    $LPC_CLK is the clock speed (default %i)\n",
-		LPC_CLK);
+	fprintf(stderr, "    $LPC_CLK is the clock speed in kHz "
+		"(default: %i)\n", LPC_CLK);
 	fprintf(stderr, "    $LPC_VERBOSE forces verbose mode\n");
 	fprintf(stderr, "    $LPC_BINARY forces binary data to stdout\n");
 	exit(1);
@@ -48,13 +48,21 @@ int main(int argc, char **argv)
 	if (start & 3 || len & 3)
 		errorexit(argv, "Start and len must be multiples of 4");
 
-	/* get arguments from environ */
+	/* get arguments from environment */
 	port = getenv("LPC_PORT");
-	if (!port) port = LPC_PORT;
-	if (getenv("LPC_CLK")) clk = atoi(getenv("LPC_CLK"));
-	else clk = LPC_CLK;
-	if (getenv("LPC_VERBOSE")) verbose = 1; else verbose = 0;
-	if (getenv("LPC_BINARY")) binary = 1; else binary = 0;
+	if (!port)
+		port = LPC_PORT;
+	clk = LPC_CLK;
+	if (getenv("LPC_CLK"))
+		clk = atoi(getenv("LPC_CLK"));
+	verbose = 1;
+	if (getenv("LPC_QUIET"))
+		verbose = 0;
+	if (getenv("LPC_VERBOSE"))
+		verbose = 1;
+	binary = 0;
+	if (getenv("LPC_BINARY"))
+		binary = 1;
 
 	/* open serial port and make it raw */
 	V("Opening serial port %s\n", port);
@@ -93,7 +101,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Force user flash on, or we'll read back ROM vectors */
-	lpc_map_user_flash(fd);
+	lpc_map_user_flash(fd, dev->type);
 
 	/* Read data to stdout */
 	sprintf(s, "R %li %li\r\n", start, len);

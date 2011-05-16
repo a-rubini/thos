@@ -19,8 +19,8 @@ static void __attribute__((noreturn)) errorexit(char **argv, char *reason)
 	fprintf(stderr, "%s: Usage: \"%s <file>\n", argv[0], argv[0]);
 	fprintf(stderr, "    $LPC_PORT is the serial port (default %s)\n",
 		LPC_PORT);
-	fprintf(stderr, "    $LPC_CLK is the clock speed (default %i)\n",
-		LPC_CLK);
+	fprintf(stderr, "    $LPC_CLK is the clock speed in kHz "
+		"(default: %i)\n", LPC_CLK);
 	fprintf(stderr, "    $LPC_VERBOSE forces verbose mode (default on)\n");
 	fprintf(stderr, "    $LPC_QUIET disables verbose mode\n");
 	exit(1);
@@ -31,7 +31,6 @@ static void __attribute__((noreturn)) errorexit(char **argv, char *reason)
  */
 #define V(format, ...) if (verbose) fprintf(stderr, format, ## __VA_ARGS__)
 #define MAXSIZE (64*1024)
-#define RAMOFFSET 1024
 
 int main(int argc, char **argv)
 {
@@ -50,14 +49,18 @@ int main(int argc, char **argv)
 		errorexit(argv, s);
 	}
 
-	/* get arguments from environ */
+	/* get arguments from environment */
 	port = getenv("LPC_PORT");
-	if (!port) port = LPC_PORT;
-	if (getenv("LPC_CLK")) clk = atoi(getenv("LPC_CLK"));
-	else clk = LPC_CLK;
-	if (getenv("LPC_QUIET")) verbose = 0; else verbose = 1;
-	if (getenv("LPC_VERBOSE")) verbose = 1;
-
+	if (!port)
+		port = LPC_PORT;
+	clk = LPC_CLK;
+	if (getenv("LPC_CLK"))
+		clk = atoi(getenv("LPC_CLK"));
+	verbose = 1;
+	if (getenv("LPC_QUIET"))
+		verbose = 0;
+	if (getenv("LPC_VERBOSE"))
+		verbose = 1;
 
 	/* open serial port and make it raw */
 	V("Opening serial port %s\n", port);
@@ -100,12 +103,12 @@ int main(int argc, char **argv)
 	/* read file and check size */
 	size = fread(filebuf, 1, MAXSIZE, f);
 	size = (size/900+1) * 900; /* hack: ensure it's a multiple of 20 */
-	if (size > dev->ram * 1024 - RAMOFFSET)
+	if (size > dev->ram * 1024 - /* our offset into ram */ 1024)
 	errorexit(argv, "file size doesn't fit RAM\n");
 	V("size is %i\n", size);
 
 	/* Write data to RAM */
-	sprintf(s, "W %i %i\r\n", (0x1000<<16) + RAMOFFSET , size);
+	sprintf(s, "W %lu %i\r\n", dev->type->ram_addr, size);
 	V("%s", s);
 	reply = lpc_write_c(fd, s, 2); /* echo and error code */
 	V("%s", reply);
@@ -131,7 +134,7 @@ int main(int argc, char **argv)
 	/* hopefully, everything worked. Now go to the address */
 	sprintf(s, "U 23130\r\n");
 	lpc_write_c(fd, s, 2);
-	sprintf(s, "G %i T\r\n", (0x1000<<16) + RAMOFFSET);
+	sprintf(s, "G %lu %c\r\n", dev->type->ram_addr, dev->type->mode);
 	lpc_write_c(fd, s, 2);
 	while(1) {
 		fd_set fds; struct timeval tv;
