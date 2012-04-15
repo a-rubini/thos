@@ -381,7 +381,7 @@ means of the symbols we defined in the linker script: @i{__bss_start} and
 
 The code in @i{boot.S} is going to live in the section called @i{.boot},
 so the linker script will place it before the default code section.
-this ensures that the first instructions in the binary file come
+This ensures that the first instructions in the binary file come
 from @i{boot.S}.
 
 The first line of the file is thus as follows:
@@ -471,7 +471,7 @@ of the target architecture and assembly language:
 @item .global
 
 	Any symbols defined in the assembly file are local by default.
-        Here, we ant @i{_thos_start} to be externally visible, because
+        Here, we want @i{_thos_start} to be externally visible, because
         it is the entry point looked for by the linker script.
 
 @item .extern
@@ -684,7 +684,7 @@ a few possibilities
 	This approach is pretty common in the small microcontroller-class
         operating system. The resulting code to write the Transmit Holding
         Register is somewhat like ``@code{U0THR = c}''.  I personally
-        dislike it because the casual reader of the should know in advance
+        dislike it because the casual reader should know in advance
         that @code{U0THR} is an hardware register, and hardware accesses
         are not generally visible in the code.
 
@@ -1095,7 +1095,7 @@ tasks in the @i{thos} directory and have them run, without manually
 editing a task list.  The ELF section helped, but there is still the
 @code{Makefile} to be edited.
 
-I a burst of extra-laziness, let's use wildcards in the @code{Makefile}:
+In a burst of extra-laziness, let's use wildcards in the @code{Makefile}:
 
 @example
     TSRC = $(wildcard task-*.c)
@@ -1223,7 +1223,7 @@ however long the task list may be.
 
 Finally, let's use the @code{name} field in the task list, this is a good
 diagnostic aid to verify that everything went in place despite use of
-an obscure ELF section. In this same loop we'll als call the @i{init}
+an obscure ELF section. In this same loop we'll also call the @i{init}
 method of each task, if assigned:
 
 @example
@@ -1293,7 +1293,7 @@ The job runs 5 times per second and features a running light
 with a period of 1 second: 4 states turn on one led, in sequence,
 and the last state has all leds turned off.
 
-Mi initial example was shorter (used 4 states, so no @code{if}
+My initial example was shorter (used 4 states, so no @code{if}
 nor @code{switch} was needed) but this is more realistic as
 a state machine:
 
@@ -1372,9 +1372,9 @@ we need to setup the counter 0. No other changes are needed.
 The task is designed as a state machine referencing a global
 @code{tune} variable. The variable is a text string naming
 the notes and pauses; the current state of the state machine
-is a pointer to the next character in the string. when at end-of-string
+is a pointer to the next character in the string. When at end-of-string
 the pointer is reset to the beginning of the @code{tune} string.
-note that this is suboptimal: the task code
+Note that this is suboptimal: the task code
 itself can run two state machines concurrently because @code{tune}
 is global. The correct fix would be in defining a structure with
 two fields as task status: one field should be the tune strings for
@@ -1507,7 +1507,7 @@ The main differences are in register names and values (i.e.,
 
 The last item depends on the different kind of device being used: the
 buzzer you find on modern PC cases is a replacement for a loudspeaker,
-so you driver it with a square wave of the desired frequency.  The one
+so you drive it with a square wave of the desired frequency.  The one
 mounted on the Christmas Tree is self-oscillating, and ticks at a few
 kilohertz when powered on -- for this reason the code is making a short
 positive pulse in the PWM output, changing the overall frequency.
