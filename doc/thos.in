@@ -33,8 +33,8 @@
 
 @setchapternewpage off
 
-@set update-month May 2011
-@set release v2011-05
+@set update-month December 2012
+@set release v2012-12
 
 @finalout
 
@@ -54,11 +54,17 @@
 This document accompanies source code for a simple operating system
 for micro-controllers.  The OS uses cooperative multitasking and
 handles a few different tasks (but you can easily add more). The
-target CPU is the LPC1343 (Cortex-M3). The board I  used os
+target CPU is the LPC1343 (Cortex-M3). The board I  used
 is the one sold by Olimex for 15 EUR. but I had to add a level converter
 for the serial port.  Actually, any board will work, but you, as a reader,
-are not actually expected to run the code -- even if it really runs on my
-hardware.
+are not actually expected to run the code because of lack of hardware,
+but please be assured that it works fine on my hardware.
+
+In the future I may port the system to the @i{Versatile} board, in
+order to be able to run it on @i{Qemu}, without real hardware. No
+other changes to Thos are planned, because it must fit in two hours.
+(Once, in August 2012, I made an error with time slots and shrank
+my talk into one hour and 15 minutes, but it's not fun, that fast).
 
 This project was born as a simplified spin-off of another OS that I am
 writing; Thos has been presented a few times in the form of a lesson.
@@ -66,9 +72,9 @@ Initially I wrote it for ARM7 (using the @i{Christmas Tree} device),
 then I've redone it on a Cortex-M3, since the @i{tree} is not for sale
 any more and the cheap ARM7 boards are now more expensive than the
 cheap Cortex ones, so the current hardware I'm using is the board
-depicted below.
+depicted below. 
 
-@image{lpc1343, 8cm}
+@center @image{lpc1343, 8cm}
 
 This document describes the whole writing of the OS, starting from an
 empty directory. As a prerequisite, you are expected to know C
@@ -1358,7 +1364,7 @@ loudspeaker (one of those you can steal from a dead PC). It is
 connected to ground and the P0_1, where one of the PWM signals
 of timer 0 can be output.
 
-@image{speaker, 8cm}
+@center @image{speaker, 8cm}
 
 @c ==========================================================================
 @node Defining the Tune
@@ -1486,7 +1492,7 @@ The task is then defined as usual, running at a frequency of @code{HZ
 I initially wrote Thos on the LPC-2104 processor, in the ``Christmas Tree''
 evaluation board.
 
-@image{ctree, 8cm}
+@center @image{ctree, 8cm}
 
 After writing the LPC-1343 version, described in this document, I
 ported the code back to the Christmas Tree, and put it in the
@@ -1522,15 +1528,50 @@ has no USB-storage capabilities.
 @node The Future of Thos
 @chapter The Future of Thos
 
-I feel I'm almost done with Thos, unless there are bugs to fix (like a
-I fixed a major typo in original code after release 2011-04).
+In 2011, after writing this document, I felt I was almost done with
+Thos, unless there were bugs to fix (like a I fixed a major typo in
+original code after release 2011-04, and a student fixed some typos
+and submitted a patch).
 
-What I'm trying to do now is porting to the ATmega8 processor,
-in one of the ``Arduino'' forms.  Writing bare-metal code for Arduino is more
+My plans, back then, were to port to the ATmega8 processor,
+in one of the ``Arduino'' forms.  Unfortunately,
+writing bare-metal code for Arduino is more
 difficult than writing for LPC-family ARM, because the code can only
 live in Flash memory, and the UART must be set up by the OS: there is
-no ROM preconfiguring it for us.  Currently, the @code{boot.S}
-and UART are working, and I'm working on  the @i{jiffies} abstraction.
+no ROM configuring it for us.  I had @code{boot.S}
+and UART working, but I stopped, for lack of time, while porting the
+@i{jiffies} abstraction. This port may happen in the future, but it's
+not currently at the top of my list of things to do.
+
+Another plan is porting to a device that is emulated by @i{Qemu},
+so you don't need real hardware to see the code running. This will happen,
+sooner or later (or I can accept patches for that).
+
+But what actually happened is that I added some features and
+functionalities, that doesn't fit in the 2 hours at all, much less
+than the PWM task described earlier.  The material is libraries
+(e.g. printf), drivers (such as gpio and spi) and tasks (a shell on
+the serial port, real I/O and possibly more).
+
+While adding such code, I noticed how the simple code layout chosen
+here doesn't fit any more, even though the basic design remains the
+same and the main function (the scheduler) is unchanged.  Initially I
+tried to bring on the master branch of this repository, but after a
+few days I realized it really doesn't work because there I'm
+interested more in the final result than in having a bugless history
+to be described commit by commit.  So the new project, called
+Bathos (Born Again Thos), has a new repository, that continues
+development (and documentation) starting from release 2012-12 of Thos.
+
+The links to the repositories are as follows: they are host both on
+gitorious and on my own system.
+
+@itemize @bullet
+@item @url{git://gitorious.org/rubi/thos.git}
+@item @url{git://gitorious.org/rubi/bathos.git}
+@item @url{git://gnudd.com/thos.git}
+@item @url{git://gnudd.com/bathos.git}
+@end itemize
 
 Hope you enjoyed this, and you'll get the incentive to write your own
 OS sooner or later. In the 20th century real people didn't call
