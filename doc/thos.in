@@ -33,8 +33,8 @@
 
 @setchapternewpage off
 
-@set update-month December 2012
-@set release v2012-12
+@set update-month January 2013
+@set release v2013-01
 
 @finalout
 
@@ -1114,8 +1114,7 @@ This is a bad idea in many situations, because whenever you make a
 backup copy of a source file in the same directory, you'll find that
 both files get compiled and the linker complains about duplicate
 symbols.  However, I find it handy in small projects, especially
-because I can drop-in a task that plays music without any edit
--- this will happen in the next release of this document.
+because I can drop-in a task that plays music without any edit.
 
 The commit for this chapter also includes a @code{make clean} target,
 which is useful in a system with no support for real dependencies.
@@ -1525,32 +1524,92 @@ though the code shown here only works from RAM -- the LPC-21xx family
 has no USB-storage capabilities.
 
 @c ##########################################################################
+@node Thos on AVR
+@chapter Thos on AVR (Arduino)
+
+The directory called @i{Thos-avr} hosts a port to the AVR CPU. My
+actual target is the initial Arduino board, so compilation is
+specifically tailored to the ATmega8 implementation, featuring 8kB of
+flash memory and 1kB or RAM.  Such port only includes the serial
+tasks, as I have no user leds and the hardware is not capable enough
+to play a tune using PWM using the simple code shown earlier.
+
+There are a number of differences between the code i described in
+previous chapters and the one ported to the AVR. The differences are
+mainly due to the separation between program memory and data memory
+featured in this 8-bit CPU: we can't execute a program from RAM, so we
+boot from flash and we need to copy the data segment from flash to RAM
+before calling the main function.  The same kind of code is also
+needed on the various ARM microcontrollers if you want to save your
+program to non-volatile memory; the original Thos avoided that
+complexity by running directly from RAM.
+
+The other main difference is in how @i{jiffies} is managed: the CPU
+has no 32-bit timers, so I had to configure a timely interrupt to
+update a real variable accessed by C code.
+
+This is the complete list of the differences between the top-level
+code and the one in the @i{Thos-avr} subdirectory:
+
+@itemize
+
+@item The linker script is more complex, because it must deal with
+separate program memory (flash) and data memory (RAM).
+
+@item The boot assembly code is longer, because it must copy
+the data segment to RAM before calling C code.
+
+@item @t{vectors.S} is an additional file.
+ It defines the initial instructions of the binary image, i.e. the
+interrupt vectors.  In a burst of laziness, I just made all interrupt
+vectors point to the procedure that updates the @i{jiffies} value.
+
+@item @t{jiffies.S} is another new file: it increments @i{jiffies}
+at each invocation. Such operation is made up of several additions,
+with carry propagation, because the CPU in itself offers 8-bit registers,
+with only a few 16-bit operations on pairs of registers.
+
+@item The @t{regs} variable is an array of @t{uint8_t} locations, because
+all I/O registers are 8 bits wide. (It is an array of @t{uint32_t} items
+in the ARM Thos.
+
+@item HZ is 244 and the tick doesn't even run at a sharp 244Hz. This depends
+on hardware limits in how the prescaler can be configured.
+
+@item The serial port runs at 38400 bits per second, not 115200. Again,
+this depends on the internal clocks we can use, and the choice is
+documented in the source itself. Configuration of the UART is done in
+the code itself, as we can't rely on a vendor-provided loader to
+configure it for us.
+
+@item The Makefile includes flags for ATmega8, and a new @t{load}
+target, to call @i{avrdude} with proper parameters. This matches my
+own setup and you may need to change it to fir yours.
+
+@end itemize
+
+On the other hand, @t{main.c} and @t{task-uart.c} are unchanged,
+so the basic layout of the OS is still what is described in the
+initial pages of this document.
+
+@c ##########################################################################
 @node The Future of Thos
 @chapter The Future of Thos
 
 In 2011, after writing this document, I felt I was almost done with
-Thos, unless there were bugs to fix (like a I fixed a major typo in
-original code after release 2011-04, and a student fixed some typos
+Thos, unless there were bugs to fix (e.g., I fixed a major typo in
+original code after release 2011-04, and a student fixed some other typos
 and submitted a patch).
 
-My plans, back then, were to port to the ATmega8 processor,
-in one of the ``Arduino'' forms.  Unfortunately,
-writing bare-metal code for Arduino is more
-difficult than writing for LPC-family ARM, because the code can only
-live in Flash memory, and the UART must be set up by the OS: there is
-no ROM configuring it for us.  I had @code{boot.S}
-and UART working, but I stopped, for lack of time, while porting the
-@i{jiffies} abstraction. This port may happen in the future, but it's
-not currently at the top of my list of things to do.
-
-Another plan is porting to a device that is emulated by @i{Qemu},
-so you don't need real hardware to see the code running. This will happen,
-sooner or later (or I can accept patches for that).
+Back then I planned to port tot the Arduino (something which finally
+happened) and maybe also to a device that is emulated by @i{Qemu}, so
+you don't need real hardware to see the code running. This will
+happen, sooner or later (or I can accept patches for that).
 
 But what actually happened is that I added some features and
-functionalities, that doesn't fit in the 2 hours at all, much less
+functionalities, that don't fit in the 2 hours at all, much less
 than the PWM task described earlier.  The material is libraries
-(e.g. printf), drivers (such as gpio and spi) and tasks (a shell on
+(e.g. printf), drivers (such as GPIO and SPI) and tasks (a shell on
 the serial port, real I/O and possibly more).
 
 While adding such code, I noticed how the simple code layout chosen
